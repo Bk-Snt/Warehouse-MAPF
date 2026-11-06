@@ -6,8 +6,8 @@ Lifelong multi-agent path finding for warehouse robots: a hybrid PIBT + LNS plan
 congestion guidance, LaCAM deadlock fallback and delay-robust execution, benchmarked against
 WHCA\*, PIBT, RHCR and LaCAM. Includes a replay dashboard with a congestion heat map.
 
-> **Status:** Phase 2 done (PIBT, congestion guidance, balanced station assignment). Phase 3
-> (LNS refinement, deadlock fallback, robust execution) is next.
+> **Status:** Phase 3 in progress: robust execution (delays + ADG) done; LNS refinement and
+> the LaCAM deadlock fallback are next.
 
 ## The problem
 
@@ -88,6 +88,40 @@ time a robot needs for one errand; lower means less waiting and no starvation.
 
 Reproduce with `python experiments/phase2_ablation.py --robots 40 80 120 --seeds 0 1 2`, or
 a single run with `python -m warehouse_mapf.run --planner pibt --guidance --assignment balanced`.
+
+### Phase 3: robust execution when robots run late
+
+Real robots slip, brake and pause. In these runs each commanded move fails with probability
+*p* and robots occasionally stall for 5 steps. A collision is a move the simulator's emergency
+stop had to cancel. 60 robots, balanced assignment, 500 steps, mean ± std over seeds 0–2.
+
+| Delay p | Execution | Tasks / 1,000 steps | Collisions / 1,000 steps |
+| --- | --- | --- | --- |
+| 0% | PIBT, replan every step | 505 ± 6 | 0 |
+| 0% | Window plans + ADG | 414 ± 13 | 0 |
+| 5% | PIBT, replan every step | 477 ± 13 | 633 ± 72 |
+| 5% | Window plans, naive execution | 475 ± 11 | 611 ± 84 |
+| 5% | Window plans + ADG | 400 ± 15 | **0** |
+| 10% | PIBT, replan every step | 452 ± 8 | 1,027 ± 22 |
+| 10% | Window plans, naive execution | 451 ± 2 | 983 ± 6 |
+| 10% | Window plans + ADG | 398 ± 14 | **0** |
+| 20% | PIBT, replan every step | 395 ± 9 | 1,873 ± 127 |
+| 20% | Window plans, naive execution | 396 ± 5 | 1,715 ± 94 |
+| 20% | Window plans + ADG | 348 ± 16 | **0** |
+
+- **Without an ADG, every delay rate causes hundreds of collisions.** PIBT packs robots
+  nose to tail, so when a leader is delayed the robot behind drives into it.
+- **With the action dependency graph there are zero collisions at every delay rate**, also
+  in strict mode, where a single conflicting command would stop the run. A robot only enters
+  a cell once the robot planned before it has left.
+- **Safety costs 12–18% throughput**, because robots keep a one-cell gap instead of moving
+  nose to tail. The gap shrinks as delays grow (18% at 0% delay, 12% at 10–20%).
+- Building window plans uncovered a deadlock: some knots of robots can only be untangled by
+  rotating around a loop, which delays make unsafe. The planner now bans one move in the loop
+  and lets PIBT find another way out, instead of freezing the whole loop.
+
+Reproduce with `python experiments/phase3_delays.py --robots 60 --seeds 0 1 2`, or a single
+run with `python -m warehouse_mapf.run --planner pibt --execution adg --delay 0.1`.
 
 ## Roadmap
 
