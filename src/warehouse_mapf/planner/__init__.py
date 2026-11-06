@@ -1,1 +1,5 @@
-"""Hybrid planner: guided heuristic, PIBT, LNS refinement, LaCAM fallback (Phase 2-3)."""
+"""Hybrid planner components: PIBT now; guidance, LNS and LaCAM fallback to come."""
+
+from warehouse_mapf.planner.pibt import PIBTPlanner
+
+__all__ = ["PIBTPlanner"]
