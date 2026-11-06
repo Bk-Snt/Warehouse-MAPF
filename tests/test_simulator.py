@@ -58,3 +58,8 @@ def test_station_load_counts_remaining_station_errands(small_layout):
     # Each robot starts with an inbound and a picking/outbound stop ahead of it.
     assert sum(load.values()) == 2 * 12
     assert set(load) <= small_layout.station_cells
+
+
+def test_errand_load_counts_shelves_too(small_layout):
+    sim = Simulator(small_layout, num_robots=12, seed=0)
+    assert sum(sim.errand_load().values()) == 3 * 12  # inbound, shelf, delivery

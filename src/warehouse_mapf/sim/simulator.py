@@ -145,7 +145,7 @@ class Simulator:
         picks = self.rng.choice(len(starts), size=num_robots, replace=False)
         self.robots: list[Robot] = []
         for i, k in enumerate(picks):
-            task = self.tasks.next_task(starts[k], 0, self.station_load())
+            task = self.tasks.next_task(starts[k], 0, self.errand_load())
             self.robots.append(Robot(id=i, pos=starts[k], task=task))
         self._update_errands()
         self._record()
@@ -224,18 +224,21 @@ class Simulator:
         r.errand_idx += 1
         if r.errand_idx == len(r.task.errands):
             m.tasks_completed += 1
-            r.task = self.tasks.next_task(r.pos, self.t, self.station_load())
+            r.task = self.tasks.next_task(r.pos, self.t, self.errand_load())
             r.errand_idx = 0
+
+    def errand_load(self) -> Counter[Cell]:
+        """How many robots still have an errand at each cell (stations and shelves)."""
+        load: Counter[Cell] = Counter()
+        for r in self.robots:
+            for errand in r.task.errands[r.errand_idx :]:
+                load[errand.cell] += 1
+        return load
 
     def station_load(self) -> Counter[Cell]:
         """How many robots still have each station ahead of them in their task."""
         stations = self.warehouse.station_cells
-        load: Counter[Cell] = Counter()
-        for r in self.robots:
-            for errand in r.task.errands[r.errand_idx :]:
-                if errand.cell in stations:
-                    load[errand.cell] += 1
-        return load
+        return Counter({c: n for c, n in self.errand_load().items() if c in stations})
 
     def _record(self) -> None:
         if self.record:

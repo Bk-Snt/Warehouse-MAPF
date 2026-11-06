@@ -40,6 +40,9 @@ class TaskGenerator:
     * "nearest": the closest station by travel distance.
     * "balanced": the station with the lowest travel distance plus expected
       queueing time, i.e. distance + (robots already bound for it) * service time.
+      It also avoids sending a robot to a shelf another robot is already headed
+      for: it redraws the product a few times (real warehouses keep popular
+      products in several places), so robots do not pile up in one aisle.
     """
 
     def __init__(
@@ -71,6 +74,9 @@ class TaskGenerator:
         weights = 1.0 / ranks**popularity_skew
         self.product_weights = weights / weights.sum()
 
+    def _draw_product(self) -> Cell:
+        return self.products[self.rng.choice(len(self.products), p=self.product_weights)]
+
     def _choose(
         self, stations: list[Station], cell: Cell, load: Mapping[Cell, int] | None
     ) -> Station:
@@ -88,11 +94,16 @@ class TaskGenerator:
     def next_task(self, robot_pos: Cell, t: int, load: Mapping[Cell, int] | None = None) -> Task:
         """Create a task for a robot at ``robot_pos``.
 
-        ``load`` maps station cells to the number of robots already bound for
-        them; it is used only by the "balanced" policy.
+        ``load`` maps cells (stations and shelves) to the number of robots
+        that still have an errand there; only the "balanced" policy uses it.
         """
         wh = self.warehouse
-        product = self.products[self.rng.choice(len(self.products), p=self.product_weights)]
+        product = self._draw_product()
+        if self.assignment == "balanced" and load is not None:
+            for _ in range(10):  # redraw while another robot is already headed there
+                if load.get(product, 0) == 0:
+                    break
+                product = self._draw_product()
         inbound = self._choose(wh.stations_of("inbound"), robot_pos, load)
 
         picking, outbound = wh.stations_of("picking"), wh.stations_of("outbound")

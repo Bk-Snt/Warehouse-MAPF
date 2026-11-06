@@ -6,8 +6,8 @@ Lifelong multi-agent path finding for warehouse robots: a hybrid PIBT + LNS plan
 congestion guidance, LaCAM deadlock fallback and delay-robust execution, benchmarked against
 WHCA\*, PIBT, RHCR and LaCAM. Includes a replay dashboard with a congestion heat map.
 
-> **Status:** Phase 3 in progress: robust execution (delays + ADG) done; LNS refinement and
-> the LaCAM deadlock fallback are next.
+> **Status:** Phase 3 in progress: robust execution (delays + ADG) and the LaCAM deadlock
+> fallback are done; LNS refinement is next.
 
 ## The problem
 
@@ -64,26 +64,27 @@ time a robot needs for one errand; lower means less waiting and no starvation.
 
 | Robots | Variant | Tasks / 1,000 steps | p99 errand (steps) | ms / step |
 | --- | --- | --- | --- | --- |
-| 40 | PIBT | 382 ± 5 | 58 ± 4 | 0.6 |
-| 40 | + balanced assignment | 389 ± 4 | 53 ± 2 | 0.6 |
-| 40 | + congestion guidance | 411 ± 5 | 54 ± 5 | 3.3 |
-| 40 | + both | **415 ± 5** | **49 ± 1** | 3.4 |
-| 80 | PIBT | 505 ± 56 | 170 ± 46 | 1.0 |
-| 80 | + balanced assignment | 600 ± 5 | 84 ± 1 | 1.0 |
-| 80 | + congestion guidance | 536 ± 60 | 188 ± 53 | 4.3 |
-| 80 | + both | **627 ± 11** | **79 ± 4** | 4.6 |
-| 120 | PIBT | 541 ± 61 | 280 ± 66 | 1.3 |
-| 120 | + balanced assignment | 630 ± 12 | 146 ± 3 | 1.3 |
-| 120 | + congestion guidance | 586 ± 61 | 305 ± 63 | 5.2 |
-| 120 | + both | **646 ± 7** | 152 ± 7 | 5.3 |
+| 40 | PIBT | 382 ± 5 | 58 ± 4 | 0.8 |
+| 40 | + balanced assignment | 388 ± 1 | 54 ± 2 | 0.9 |
+| 40 | + congestion guidance | **411 ± 5** | 54 ± 5 | 4.4 |
+| 40 | + both | 408 ± 1 | **49 ± 1** | 5.0 |
+| 80 | PIBT | 505 ± 56 | 170 ± 46 | 1.4 |
+| 80 | + balanced assignment | 609 ± 11 | 82 ± 2 | 1.5 |
+| 80 | + congestion guidance | 536 ± 60 | 188 ± 53 | 5.8 |
+| 80 | + both | **638 ± 5** | **80 ± 1** | 7.2 |
+| 120 | PIBT | 541 ± 61 | 280 ± 66 | 1.8 |
+| 120 | + balanced assignment | 621 ± 19 | **144 ± 3** | 2.0 |
+| 120 | + congestion guidance | 586 ± 61 | 305 ± 63 | 6.7 |
+| 120 | + both | **645 ± 15** | 151 ± 3 | 8.3 |
 
-- **Balanced station assignment is the biggest win in crowded runs:** at 80–120 robots it adds
-  16–19% throughput, halves the p99 errand time and removes most of the seed-to-seed variance.
-  Sending every robot to its nearest station overloads a few stations.
+- **Balanced assignment is the biggest win in crowded runs:** at 80–120 robots it adds
+  15–21% throughput, halves the p99 errand time and removes most of the seed-to-seed variance.
+  It picks the station with the lowest travel plus expected queueing time, and sends at most
+  one robot to a shelf at a time. Sending every robot to its nearest station overloads a few.
 - **Congestion guidance adds 5–8% throughput** by charging extra for driving against recent
   traffic, so robots form lanes. It costs 4–5× more planning time, mostly Python Dijkstra
   searches, which the Phase 4 C++ port targets.
-- With both, PIBT completes 646 tasks per 1,000 steps with 120 robots, against WHCA\*'s peak of
+- With both, PIBT completes 645 tasks per 1,000 steps with 120 robots, against WHCA\*'s peak of
   247 at 30 robots.
 
 Reproduce with `python experiments/phase2_ablation.py --robots 40 80 120 --seeds 0 1 2`, or
@@ -97,31 +98,57 @@ stop had to cancel. 60 robots, balanced assignment, 500 steps, mean ± std over 
 
 | Delay p | Execution | Tasks / 1,000 steps | Collisions / 1,000 steps |
 | --- | --- | --- | --- |
-| 0% | PIBT, replan every step | 505 ± 6 | 0 |
-| 0% | Window plans + ADG | 414 ± 13 | 0 |
-| 5% | PIBT, replan every step | 477 ± 13 | 633 ± 72 |
-| 5% | Window plans, naive execution | 475 ± 11 | 611 ± 84 |
-| 5% | Window plans + ADG | 400 ± 15 | **0** |
-| 10% | PIBT, replan every step | 452 ± 8 | 1,027 ± 22 |
-| 10% | Window plans, naive execution | 451 ± 2 | 983 ± 6 |
-| 10% | Window plans + ADG | 398 ± 14 | **0** |
-| 20% | PIBT, replan every step | 395 ± 9 | 1,873 ± 127 |
-| 20% | Window plans, naive execution | 396 ± 5 | 1,715 ± 94 |
-| 20% | Window plans + ADG | 348 ± 16 | **0** |
+| 0% | PIBT, replan every step | 503 ± 6 | 0 |
+| 0% | Window plans + ADG | 417 ± 25 | 0 |
+| 5% | PIBT, replan every step | 473 ± 6 | 570 ± 82 |
+| 5% | Window plans, naive execution | 474 ± 5 | 663 ± 141 |
+| 5% | Window plans + ADG | 395 ± 16 | **0** |
+| 10% | PIBT, replan every step | 445 ± 4 | 1,037 ± 48 |
+| 10% | Window plans, naive execution | 449 ± 3 | 1,027 ± 45 |
+| 10% | Window plans + ADG | 385 ± 8 | **0** |
+| 20% | PIBT, replan every step | 395 ± 9 | 1,687 ± 86 |
+| 20% | Window plans, naive execution | 397 ± 7 | 1,721 ± 72 |
+| 20% | Window plans + ADG | 352 ± 10 | **0** |
 
 - **Without an ADG, every delay rate causes hundreds of collisions.** PIBT packs robots
   nose to tail, so when a leader is delayed the robot behind drives into it.
 - **With the action dependency graph there are zero collisions at every delay rate**, also
   in strict mode, where a single conflicting command would stop the run. A robot only enters
   a cell once the robot planned before it has left.
-- **Safety costs 12–18% throughput**, because robots keep a one-cell gap instead of moving
-  nose to tail. The gap shrinks as delays grow (18% at 0% delay, 12% at 10–20%).
+- **Safety costs 11–17% throughput**, because robots keep a one-cell gap instead of moving
+  nose to tail. The gap shrinks as delays grow (17% at 0% delay, 11% at 20%).
 - Building window plans uncovered a deadlock: some knots of robots can only be untangled by
   rotating around a loop, which delays make unsafe. The planner now bans one move in the loop
   and lets PIBT find another way out, instead of freezing the whole loop.
 
 Reproduce with `python experiments/phase3_delays.py --robots 60 --seeds 0 1 2`, or a single
 run with `python -m warehouse_mapf.run --planner pibt --execution adg --delay 0.1`.
+
+### Phase 3: deadlocks on a narrow-aisle warehouse
+
+`maps/warehouse-narrow-32x32` has one-lane aisles, and every other aisle is split into two
+dead ends. A run counts as deadlocked if, after a 200-step warm-up, any 100-step window
+finishes 2 tasks or fewer. 60 robots, 1,000 steps, seeds 0–9.
+
+| Variant | Deadlocked seeds | Tasks / 1,000 steps | LaCAM fixes (solved / failed) |
+| --- | --- | --- | --- |
+| PIBT, nearest assignment | 3 of 10 | 179 ± 76 | – |
+| PIBT + LaCAM fallback, nearest assignment | 2 of 10 | 188 ± 60 | 141 / 179 |
+| PIBT, balanced assignment | **0 of 10** | **279 ± 15** | – |
+| PIBT + LaCAM fallback, balanced assignment | **0 of 10** | 274 ± 16 | 18 / 19 |
+
+- **The deadlocks came from task assignment, not path planning.** With nearest assignment, a
+  popular product in a dead-end aisle drew a dozen robots at once and they jammed the aisle.
+  Sending at most one robot to a shelf at a time removes the deadlocks in all 10 seeds and
+  raises throughput by 56%.
+- **The LaCAM fallback solves small local deadlocks that PIBT and WHCA\* cannot**, such as
+  two robots meeting head-on in a corridor that only a side pocket can resolve. It watches
+  each robot's progress and, after 60 steps without progress, plans a short escape for the
+  stuck robot and its neighbours with LaCAM, a complete search. It cannot untangle a jam of
+  a dozen robots within its 0.2 s budget, and firing it during ordinary congestion cost
+  throughput, so it now triggers only on clear deadlocks and costs about 2% when unused.
+
+Reproduce with `python experiments/phase3_deadlocks.py --robots 60`.
 
 ## Roadmap
 
