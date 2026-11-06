@@ -3,6 +3,12 @@
 Each timestep the planner returns every robot's next cell. The simulator
 checks the step, moves the robots, runs service timers at errand goals and
 hands out a new task as soon as a robot finishes one.
+
+Optional delays model real robots: each commanded move fails with probability
+``delay_prob`` (the robot stays put this step), and with probability
+``stall_prob`` the robot stalls for ``stall_steps`` steps. A delay can make a
+robot that was following another one run into it. Real robots would brake, so
+the simulator applies an emergency stop and counts it in ``metrics.collisions``.
 """
 
 from __future__ import annotations
@@ -16,7 +22,7 @@ import numpy as np
 
 from warehouse_mapf.sim.distances import DistanceCache
 from warehouse_mapf.sim.grid import Cell, Grid
-from warehouse_mapf.sim.validation import PlanError, check_step
+from warehouse_mapf.sim.validation import PlanError, check_moves, check_step, stop_conflicting
 from warehouse_mapf.sim.warehouse import Warehouse
 from warehouse_mapf.tasks.generator import Errand, Task, TaskGenerator
 
@@ -29,6 +35,7 @@ class Robot:
     errand_idx: int = 0
     busy_until: int | None = None  # set while being served at a goal
     errand_started: int = 0
+    stalled_until: int = 0  # cannot move before this time
 
     @property
     def errand(self) -> Errand:
@@ -69,6 +76,8 @@ class Metrics:
     wait_steps: int = 0  # robot not busy, not at its goal, and did not move
     max_errand_time: int = 0  # longest time any robot spent on one errand
     errand_times: list[int] = field(default_factory=list)
+    delayed_moves: int = 0  # commanded moves that did not happen because of a delay
+    collisions: int = 0  # moves cancelled by the emergency stop to avoid a collision
 
     @property
     def throughput(self) -> float:
@@ -84,6 +93,8 @@ class Metrics:
             "mean_errand_time": round(mean_errand, 2),
             "max_errand_time": self.max_errand_time,
             "wait_steps": self.wait_steps,
+            "delayed_moves": self.delayed_moves,
+            "collisions": self.collisions,
         }
 
 
@@ -97,7 +108,15 @@ class Simulator:
         popularity_skew: float = 1.0,
         outbound_share: float = 0.25,
         assignment: str = "nearest",
+        delay_prob: float = 0.0,
+        stall_prob: float = 0.0,
+        stall_steps: int = 5,
+        strict: bool = True,
     ) -> None:
+        """``strict=True`` rejects plans with conflicts (PlanError); ``False`` lets
+        conflicting commands through to the emergency stop, which counts them."""
+        if not (0.0 <= delay_prob <= 1.0 and 0.0 <= stall_prob <= 1.0):
+            raise ValueError("delay_prob and stall_prob must be in [0, 1]")
         self.warehouse = warehouse
         self.grid = warehouse.grid
         self.distances = DistanceCache(self.grid)
@@ -112,6 +131,11 @@ class Simulator:
         )
         self.metrics = Metrics()
         self.t = 0
+        self.delay_prob = delay_prob
+        self.stall_prob = stall_prob
+        self.stall_steps = stall_steps
+        self.strict = strict
+        self.delay_rng = np.random.default_rng([seed, 1])  # separate stream: same tasks
         self.record = record
         self.history: list[list[Cell]] = []
 
@@ -138,10 +162,18 @@ class Simulator:
 
     def step(self, next_positions: list[Cell]) -> None:
         current = [r.pos for r in self.robots]
-        check_step(self.grid, current, next_positions)
+        if self.strict:
+            check_step(self.grid, current, next_positions)
+        else:
+            check_moves(self.grid, current, next_positions)
         for r, nxt in zip(self.robots, next_positions, strict=True):
             if r.busy and nxt != r.pos:
                 raise PlanError(f"robot {r.id} moved while being served at {r.pos}")
+
+        actual = self._apply_delays(current, next_positions)
+        actual, stopped = stop_conflicting(current, actual)
+        self.metrics.collisions += stopped
+        for r, nxt in zip(self.robots, actual, strict=True):
             if not r.busy and nxt == r.pos and r.pos != r.goal:
                 self.metrics.wait_steps += 1
             r.pos = nxt
@@ -154,6 +186,25 @@ class Simulator:
         for _ in range(steps):
             self.step(planner.step(self.view()))
         return self.metrics
+
+    def _apply_delays(self, current: list[Cell], commanded: list[Cell]) -> list[Cell]:
+        if self.delay_prob == 0.0 and self.stall_prob == 0.0:
+            return list(commanded)
+        actual = list(commanded)
+        for i, r in enumerate(self.robots):
+            if commanded[i] == current[i]:
+                continue
+            if self.t < r.stalled_until:
+                delayed = True
+            elif self.delay_rng.random() < self.stall_prob:
+                r.stalled_until = self.t + self.stall_steps
+                delayed = True
+            else:
+                delayed = self.delay_rng.random() < self.delay_prob
+            if delayed:
+                actual[i] = current[i]
+                self.metrics.delayed_moves += 1
+        return actual
 
     def _update_errands(self) -> None:
         for r in self.robots:
