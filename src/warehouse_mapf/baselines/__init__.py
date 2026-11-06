@@ -1,1 +1,1 @@
-"""Baselines: WHCA* (Phase 1) and adapters for PIBT, RHCR and LaCAM (Phase 4)."""
+"""Baselines: greedy smoke test, WHCA*, and adapters for PIBT, RHCR and LaCAM later."""
