@@ -1,7 +1,7 @@
 """Run one simulation from the command line.
 
 Example:
-    python -m warehouse_mapf.run --robots 20 --steps 1000 --planner greedy
+    python -m warehouse_mapf.run --robots 20 --steps 1000 --planner whca
 """
 
 from __future__ import annotations
@@ -12,10 +12,11 @@ import time
 from pathlib import Path
 
 from warehouse_mapf.baselines.greedy import GreedyPlanner
+from warehouse_mapf.baselines.whca import WHCAStarPlanner
 from warehouse_mapf.sim.simulator import Simulator
 from warehouse_mapf.sim.warehouse import Warehouse
 
-PLANNERS = {"greedy": GreedyPlanner}
+PLANNERS = {"greedy": GreedyPlanner, "whca": WHCAStarPlanner}
 DEFAULT_LAYOUT = Path(__file__).resolve().parents[2] / "maps" / "warehouse-small-32x32.json"
 
 
@@ -27,11 +28,23 @@ def main(argv: list[str] | None = None) -> dict[str, float]:
     parser.add_argument("--steps", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--log", type=Path, help="save a replay log (.npz) here")
+    parser.add_argument("--window", type=int, default=16, help="WHCA* window w")
+    parser.add_argument("--replan-every", type=int, default=1, help="WHCA* replan period h")
+    parser.add_argument("--priority", choices=["fixed", "shuffle"], default="fixed")
     args = parser.parse_args(argv)
 
     warehouse = Warehouse.load(args.layout)
     sim = Simulator(warehouse, args.robots, seed=args.seed, record=args.log is not None)
-    planner = PLANNERS[args.planner]()
+    planner_params: dict[str, object] = {}
+    if args.planner == "whca":
+        planner_params = {
+            "window": args.window,
+            "replan_every": args.replan_every,
+            "priority": args.priority,
+        }
+        planner = WHCAStarPlanner(**planner_params, seed=args.seed)
+    else:
+        planner = PLANNERS[args.planner]()
 
     start = time.perf_counter()
     metrics = sim.run(planner, args.steps)
@@ -42,6 +55,7 @@ def main(argv: list[str] | None = None) -> dict[str, float]:
         "layout": warehouse.name,
         "robots": args.robots,
         "seed": args.seed,
+        **planner_params,
         **metrics.summary(),
         "ms_per_step": round(1000 * elapsed / max(args.steps, 1), 3),
     }
