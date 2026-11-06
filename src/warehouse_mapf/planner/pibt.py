@@ -85,16 +85,21 @@ class PIBTPlanner:
         view: SimView,
         priorities: np.ndarray,
         forbidden: set[tuple[int, Cell]] | None = None,
+        fixed: dict[int, Cell] | None = None,
+        blocked: set[Cell] | None = None,
     ) -> list[Cell]:
         """One PIBT step from ``view`` with the given priorities.
 
         ``forbidden`` holds (robot, cell) moves that robot may not make this step.
+        ``fixed`` robots go to the given cell (decided elsewhere, e.g. by LaCAM),
+        and no other robot may enter a ``blocked`` cell.
         """
         n = len(view.positions)
         sys.setrecursionlimit(max(sys.getrecursionlimit(), 4 * n + 100))
 
         self._view = view
         self._forbidden = forbidden or set()
+        self._blocked = blocked or set()
         self._next: list[Cell | None] = [None] * n
         self._claimed: dict[Cell, int] = {}  # next-step cell -> robot
         self._occupant = {pos: i for i, pos in enumerate(view.positions)}
@@ -103,6 +108,9 @@ class PIBTPlanner:
             if view.busy[i]:
                 self._next[i] = view.positions[i]
                 self._claimed[view.positions[i]] = i
+        for i, cell in (fixed or {}).items():
+            self._next[i] = cell
+            self._claimed[cell] = i
 
         for i in np.argsort(-priorities, kind="stable"):
             if self._next[i] is None:
@@ -193,6 +201,8 @@ class PIBTPlanner:
         for v in self._candidates(i):
             if v in self._claimed or v == parent_pos or (i, v) in self._forbidden:
                 continue  # taken next step, a swap with the robot pushing us, or banned
+            if v != pos and v in self._blocked:
+                continue
             k = self._occupant.get(v)
             if k is not None and k != i and self._next[k] == pos:
                 continue  # k is moving into our cell: swapping is not allowed

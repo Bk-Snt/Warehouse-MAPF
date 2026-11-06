@@ -76,3 +76,18 @@ def test_unknown_assignment_rejected(small_layout):
             np.random.default_rng(0),
             assignment="random",
         )
+
+
+def test_balanced_assignment_avoids_a_shelf_another_robot_is_headed_for(small_layout):
+    def product(load):
+        gen = TaskGenerator(
+            small_layout,
+            DistanceCache(small_layout.grid),
+            np.random.default_rng(5),
+            popularity_skew=3.0,  # one product gets almost every order
+            assignment="balanced",
+        )
+        return gen.next_task((10, 10), t=0, load=load).errands[1].cell
+
+    hot = product(load={})
+    assert product(load={hot: 1}) != hot

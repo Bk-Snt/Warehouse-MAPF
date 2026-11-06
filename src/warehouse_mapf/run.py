@@ -13,6 +13,7 @@ from pathlib import Path
 
 from warehouse_mapf.baselines.greedy import GreedyPlanner
 from warehouse_mapf.baselines.whca import WHCAStarPlanner
+from warehouse_mapf.planner.fallback import DeadlockFallbackPlanner
 from warehouse_mapf.planner.pibt import PIBTPlanner
 from warehouse_mapf.planner.windowed import WindowedPlanner
 from warehouse_mapf.sim.simulator import Simulator
@@ -41,6 +42,9 @@ def main(argv: list[str] | None = None) -> dict[str, float]:
         default="step",
         help="PIBT: replan every step, or 8-step window plans run naively or with an ADG",
     )
+    parser.add_argument(
+        "--fallback", action="store_true", help="PIBT: LaCAM fallback for stuck robots"
+    )
     parser.add_argument("--delay", type=float, default=0.0, help="chance a move is delayed")
     parser.add_argument("--stall-prob", type=float, default=0.0, help="chance of a 5-step stall")
     args = parser.parse_args(argv)
@@ -65,9 +69,17 @@ def main(argv: list[str] | None = None) -> dict[str, float]:
         }
         planner = WHCAStarPlanner(**planner_params, seed=args.seed)
     elif args.planner == "pibt":
-        planner_params = {"guidance": args.guidance, "execution": args.execution}
+        planner_params = {
+            "guidance": args.guidance,
+            "execution": args.execution,
+            "fallback": args.fallback,
+        }
+        if args.fallback and args.execution != "step":
+            parser.error("--fallback currently works with --execution step only")
         planner = PIBTPlanner(seed=args.seed, guidance=args.guidance)
-        if args.execution != "step":
+        if args.fallback:
+            planner = DeadlockFallbackPlanner(planner, seed=args.seed)
+        elif args.execution != "step":
             planner = WindowedPlanner(planner, adg=args.execution == "adg")
     else:
         planner = PLANNERS[args.planner]()

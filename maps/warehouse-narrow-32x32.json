@@ -1,0 +1,15 @@
+{
+  "name": "warehouse-narrow-32x32",
+  "map": "warehouse-narrow-32x32.map",
+  "shelf_service_time": 2,
+  "stations": [
+    {"kind": "inbound", "cell": [4, 0], "service_time": 3},
+    {"kind": "inbound", "cell": [13, 0], "service_time": 3},
+    {"kind": "inbound", "cell": [22, 0], "service_time": 3},
+    {"kind": "inbound", "cell": [30, 0], "service_time": 3},
+    {"kind": "picking", "cell": [4, 31], "service_time": 5},
+    {"kind": "picking", "cell": [13, 31], "service_time": 5},
+    {"kind": "picking", "cell": [22, 31], "service_time": 5},
+    {"kind": "outbound", "cell": [30, 31], "service_time": 3}
+  ]
+}
