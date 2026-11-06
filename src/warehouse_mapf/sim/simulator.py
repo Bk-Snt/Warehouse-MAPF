@@ -7,6 +7,7 @@ hands out a new task as soon as a robot finishes one.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -95,6 +96,7 @@ class Simulator:
         record: bool = False,
         popularity_skew: float = 1.0,
         outbound_share: float = 0.25,
+        assignment: str = "nearest",
     ) -> None:
         self.warehouse = warehouse
         self.grid = warehouse.grid
@@ -106,6 +108,7 @@ class Simulator:
             self.rng,
             popularity_skew=popularity_skew,
             outbound_share=outbound_share,
+            assignment=assignment,
         )
         self.metrics = Metrics()
         self.t = 0
@@ -116,10 +119,10 @@ class Simulator:
         if num_robots > len(starts):
             raise ValueError(f"{num_robots} robots do not fit in {len(starts)} start cells")
         picks = self.rng.choice(len(starts), size=num_robots, replace=False)
-        self.robots = [
-            Robot(id=i, pos=starts[k], task=self.tasks.next_task(starts[k], 0))
-            for i, k in enumerate(picks)
-        ]
+        self.robots: list[Robot] = []
+        for i, k in enumerate(picks):
+            task = self.tasks.next_task(starts[k], 0, self.station_load())
+            self.robots.append(Robot(id=i, pos=starts[k], task=task))
         self._update_errands()
         self._record()
 
@@ -170,8 +173,18 @@ class Simulator:
         r.errand_idx += 1
         if r.errand_idx == len(r.task.errands):
             m.tasks_completed += 1
-            r.task = self.tasks.next_task(r.pos, self.t)
+            r.task = self.tasks.next_task(r.pos, self.t, self.station_load())
             r.errand_idx = 0
+
+    def station_load(self) -> Counter[Cell]:
+        """How many robots still have each station ahead of them in their task."""
+        stations = self.warehouse.station_cells
+        load: Counter[Cell] = Counter()
+        for r in self.robots:
+            for errand in r.task.errands[r.errand_idx :]:
+                if errand.cell in stations:
+                    load[errand.cell] += 1
+        return load
 
     def _record(self) -> None:
         if self.record:

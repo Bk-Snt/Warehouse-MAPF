@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -32,8 +33,13 @@ class TaskGenerator:
 
     Products sit at storage cells. Popularity follows a Zipf-like law: the
     product with popularity rank k is ordered with weight 1 / k**skew, so a few
-    products get most orders, as in real warehouses. Stations are chosen
-    greedily by distance (the Phase 1 assignment policy).
+    products get most orders, as in real warehouses.
+
+    Station choice depends on ``assignment``:
+
+    * "nearest": the closest station by travel distance.
+    * "balanced": the station with the lowest travel distance plus expected
+      queueing time, i.e. distance + (robots already bound for it) * service time.
     """
 
     def __init__(
@@ -43,7 +49,10 @@ class TaskGenerator:
         rng: np.random.Generator,
         popularity_skew: float = 1.0,
         outbound_share: float = 0.25,
+        assignment: str = "nearest",
     ) -> None:
+        if assignment not in ("nearest", "balanced"):
+            raise ValueError("assignment must be 'nearest' or 'balanced'")
         if popularity_skew < 0:
             raise ValueError("popularity_skew must be >= 0")
         if not 0.0 <= outbound_share <= 1.0:
@@ -52,6 +61,7 @@ class TaskGenerator:
         self.distances = distances
         self.rng = rng
         self.outbound_share = outbound_share
+        self.assignment = assignment
         self._next_id = 0
 
         products = list(warehouse.storage_cells)
@@ -61,21 +71,33 @@ class TaskGenerator:
         weights = 1.0 / ranks**popularity_skew
         self.product_weights = weights / weights.sum()
 
-    def _nearest(self, stations: list[Station], cell: Cell) -> Station:
+    def _choose(
+        self, stations: list[Station], cell: Cell, load: Mapping[Cell, int] | None
+    ) -> Station:
+        balanced = self.assignment == "balanced" and load is not None
+
         def key(s: Station) -> tuple[int, int]:
             d = self.distances.dist(cell, s.cell)
-            return (d if d >= 0 else 1 << 30, s.id)
+            cost = d if d >= 0 else 1 << 30
+            if balanced:
+                cost += load.get(s.cell, 0) * s.service_time
+            return (cost, s.id)
 
         return min(stations, key=key)
 
-    def next_task(self, robot_pos: Cell, t: int) -> Task:
+    def next_task(self, robot_pos: Cell, t: int, load: Mapping[Cell, int] | None = None) -> Task:
+        """Create a task for a robot at ``robot_pos``.
+
+        ``load`` maps station cells to the number of robots already bound for
+        them; it is used only by the "balanced" policy.
+        """
         wh = self.warehouse
         product = self.products[self.rng.choice(len(self.products), p=self.product_weights)]
-        inbound = self._nearest(wh.stations_of("inbound"), robot_pos)
+        inbound = self._choose(wh.stations_of("inbound"), robot_pos, load)
 
         picking, outbound = wh.stations_of("picking"), wh.stations_of("outbound")
         use_outbound = bool(outbound) and (not picking or self.rng.random() < self.outbound_share)
-        dest = self._nearest(outbound if use_outbound else picking, product)
+        dest = self._choose(outbound if use_outbound else picking, product, load)
 
         task = Task(
             id=self._next_id,
