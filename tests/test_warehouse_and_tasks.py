@@ -48,3 +48,31 @@ def test_tasks_are_reproducible_and_skewed(small_layout):
     assert products(1) == products(1)
     counts = sorted((products(1).count(c) for c in set(products(1))), reverse=True)
     assert counts[0] > 300 / len(small_layout.storage_cells) * 10
+
+
+def test_balanced_assignment_avoids_a_busy_station(small_layout):
+    gen = TaskGenerator(
+        small_layout,
+        DistanceCache(small_layout.grid),
+        np.random.default_rng(0),
+        assignment="balanced",
+    )
+    near = gen.next_task((27, 2), t=0).errands[0].cell
+    assert near == (28, 0)
+    crowded = {(28, 0): 10}  # ten robots already bound for the nearest inbound
+    assert gen.next_task((27, 2), t=0, load=crowded).errands[0].cell != (28, 0)
+
+
+def test_nearest_assignment_ignores_load(small_layout):
+    gen = TaskGenerator(small_layout, DistanceCache(small_layout.grid), np.random.default_rng(0))
+    assert gen.next_task((27, 2), t=0, load={(28, 0): 10}).errands[0].cell == (28, 0)
+
+
+def test_unknown_assignment_rejected(small_layout):
+    with pytest.raises(ValueError):
+        TaskGenerator(
+            small_layout,
+            DistanceCache(small_layout.grid),
+            np.random.default_rng(0),
+            assignment="random",
+        )

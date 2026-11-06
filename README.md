@@ -6,7 +6,8 @@ Lifelong multi-agent path finding for warehouse robots: a hybrid PIBT + LNS plan
 congestion guidance, LaCAM deadlock fallback and delay-robust execution, benchmarked against
 WHCA\*, PIBT, RHCR and LaCAM. Includes a replay dashboard with a congestion heat map.
 
-> **Status:** Phase 2 in progress: PIBT done; congestion guidance and assignment policies next.
+> **Status:** Phase 2 done (PIBT, congestion guidance, balanced station assignment). Phase 3
+> (LNS refinement, deadlock fallback, robust execution) is next.
 
 ## The problem
 
@@ -48,13 +49,45 @@ Throughput is tasks completed per 1,000 steps; the longest errand (in steps) sho
 - Greedy deadlocks within the first ~100 steps.
 - WHCA\* matches PIBT up to 20 robots, then robots crowd the stations and throughput falls.
 - PIBT keeps scaling and plans in about 1 ms per step against WHCA\*'s 5–30 ms. Beyond ~60
-  robots its errand times grow as traffic builds up, which congestion guidance targets next.
+  robots its errand times grow as traffic builds up; the Phase 2 ablation below tackles this.
 
 Reproduce a row with:
 
 ```bash
 python -m warehouse_mapf.run --planner pibt --robots 40 --steps 1000
 ```
+
+### Phase 2 ablation: what each part adds to PIBT
+
+Mean ± standard deviation over seeds 0–2, 1,000 steps each. p99 errand = the 99th-percentile
+time a robot needs for one errand; lower means less waiting and no starvation.
+
+| Robots | Variant | Tasks / 1,000 steps | p99 errand (steps) | ms / step |
+| --- | --- | --- | --- | --- |
+| 40 | PIBT | 382 ± 5 | 58 ± 4 | 0.6 |
+| 40 | + balanced assignment | 389 ± 4 | 53 ± 2 | 0.6 |
+| 40 | + congestion guidance | 411 ± 5 | 54 ± 5 | 3.3 |
+| 40 | + both | **415 ± 5** | **49 ± 1** | 3.4 |
+| 80 | PIBT | 505 ± 56 | 170 ± 46 | 1.0 |
+| 80 | + balanced assignment | 600 ± 5 | 84 ± 1 | 1.0 |
+| 80 | + congestion guidance | 536 ± 60 | 188 ± 53 | 4.3 |
+| 80 | + both | **627 ± 11** | **79 ± 4** | 4.6 |
+| 120 | PIBT | 541 ± 61 | 280 ± 66 | 1.3 |
+| 120 | + balanced assignment | 630 ± 12 | 146 ± 3 | 1.3 |
+| 120 | + congestion guidance | 586 ± 61 | 305 ± 63 | 5.2 |
+| 120 | + both | **646 ± 7** | 152 ± 7 | 5.3 |
+
+- **Balanced station assignment is the biggest win in crowded runs:** at 80–120 robots it adds
+  16–19% throughput, halves the p99 errand time and removes most of the seed-to-seed variance.
+  Sending every robot to its nearest station overloads a few stations.
+- **Congestion guidance adds 5–8% throughput** by charging extra for driving against recent
+  traffic, so robots form lanes. It costs 4–5× more planning time, mostly Python Dijkstra
+  searches, which the Phase 4 C++ port targets.
+- With both, PIBT completes 646 tasks per 1,000 steps with 120 robots, against WHCA\*'s peak of
+  247 at 30 robots.
+
+Reproduce with `python experiments/phase2_ablation.py --robots 40 80 120 --seeds 0 1 2`, or
+a single run with `python -m warehouse_mapf.run --planner pibt --guidance --assignment balanced`.
 
 ## Roadmap
 

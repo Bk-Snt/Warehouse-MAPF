@@ -32,10 +32,18 @@ def main(argv: list[str] | None = None) -> dict[str, float]:
     parser.add_argument("--window", type=int, default=16, help="WHCA* window w")
     parser.add_argument("--replan-every", type=int, default=1, help="WHCA* replan period h")
     parser.add_argument("--priority", choices=["fixed", "shuffle"], default="fixed")
+    parser.add_argument("--guidance", action="store_true", help="PIBT: congestion guidance")
+    parser.add_argument("--assignment", choices=["nearest", "balanced"], default="nearest")
     args = parser.parse_args(argv)
 
     warehouse = Warehouse.load(args.layout)
-    sim = Simulator(warehouse, args.robots, seed=args.seed, record=args.log is not None)
+    sim = Simulator(
+        warehouse,
+        args.robots,
+        seed=args.seed,
+        record=args.log is not None,
+        assignment=args.assignment,
+    )
     planner_params: dict[str, object] = {}
     if args.planner == "whca":
         planner_params = {
@@ -45,7 +53,8 @@ def main(argv: list[str] | None = None) -> dict[str, float]:
         }
         planner = WHCAStarPlanner(**planner_params, seed=args.seed)
     elif args.planner == "pibt":
-        planner = PIBTPlanner(seed=args.seed)
+        planner_params = {"guidance": args.guidance}
+        planner = PIBTPlanner(seed=args.seed, guidance=args.guidance)
     else:
         planner = PLANNERS[args.planner]()
 
@@ -58,6 +67,7 @@ def main(argv: list[str] | None = None) -> dict[str, float]:
         "layout": warehouse.name,
         "robots": args.robots,
         "seed": args.seed,
+        "assignment": args.assignment,
         **planner_params,
         **metrics.summary(),
         "ms_per_step": round(1000 * elapsed / max(args.steps, 1), 3),

@@ -10,6 +10,9 @@ Priorities fix WHCA*'s starvation problem: a robot's priority grows by one
 for every step it spends working on its current errand, and drops back to a
 small random tie-breaker once the errand is done. A robot that has waited a
 long time eventually outranks everyone near it.
+
+With ``guidance=True`` robots rank their moves by congestion-aware cost-to-go
+(see ``guidance.py``) instead of plain shortest-path distance.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ import sys
 
 import numpy as np
 
+from warehouse_mapf.planner.guidance import CongestionGuidance
 from warehouse_mapf.sim.grid import Cell
 from warehouse_mapf.sim.simulator import SimView
 
@@ -27,8 +31,16 @@ UNREACHABLE = 1 << 20
 class PIBTPlanner:
     name = "pibt"
 
-    def __init__(self, seed: int = 0) -> None:
+    def __init__(
+        self,
+        seed: int = 0,
+        guidance: bool = False,
+        guidance_params: dict[str, float] | None = None,
+    ) -> None:
         self.rng = np.random.default_rng(seed)
+        self.use_guidance = guidance
+        self.guidance_params = guidance_params or {}
+        self.guidance: CongestionGuidance | None = None
         self.priorities: np.ndarray = np.zeros(0)
         self._tie_breakers: np.ndarray = np.zeros(0)
         self._goals: tuple[Cell, ...] = ()
@@ -49,6 +61,10 @@ class PIBTPlanner:
 
     def step(self, view: SimView) -> list[Cell]:
         self._update_priorities(view)
+        if self.use_guidance:
+            if self.guidance is None:
+                self.guidance = CongestionGuidance(view.grid, **self.guidance_params)
+            self.guidance.observe(view.positions, view.t)
         n = len(view.positions)
         sys.setrecursionlimit(max(sys.getrecursionlimit(), 4 * n + 100))
 
@@ -68,18 +84,24 @@ class PIBTPlanner:
         return [cell for cell in self._next if cell is not None]
 
     def _candidates(self, i: int) -> list[Cell]:
-        """Stay or move, closest to the goal first; prefer cells nobody stands on."""
+        """Stay or move, cheapest to the goal first; prefer cells nobody stands on."""
         view = self._view
         pos = view.positions[i]
-        dist = view.distances.table(view.goals[i])
+        source = self.guidance if self.guidance is not None else view.distances
+        dist = source.table(view.goals[i])
         cells = [pos, *view.grid.neighbors(pos)]
         order = self.rng.permutation(len(cells))  # random tie-break between equals
         cells = [cells[k] for k in order]
 
-        def key(c: Cell) -> tuple[int, bool]:
-            d = int(dist[c])
-            occupied = self._occupant.get(c, i) != i
-            return (d if d >= 0 else UNREACHABLE, occupied)
+        guidance = self.guidance
+
+        def key(c: Cell) -> tuple[float, bool]:
+            # Cost of this step (waiting costs 1) plus the cost-to-go from c.
+            d = float(dist[c])
+            if not 0 <= d < UNREACHABLE:
+                return (UNREACHABLE, True)
+            step = guidance.move_cost(pos, c) if guidance is not None and c != pos else 1.0
+            return (step + d, self._occupant.get(c, i) != i)
 
         return sorted(cells, key=key)
 

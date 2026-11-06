@@ -50,3 +50,11 @@ def test_cli_runs_and_saves_log(tmp_path):
     result = main(["--robots", "5", "--steps", "50", "--log", str(log)])
     assert result["steps"] == 50
     assert log.exists()
+
+
+def test_station_load_counts_remaining_station_errands(small_layout):
+    sim = Simulator(small_layout, num_robots=12, seed=0)
+    load = sim.station_load()
+    # Each robot starts with an inbound and a picking/outbound stop ahead of it.
+    assert sum(load.values()) == 2 * 12
+    assert set(load) <= small_layout.station_cells
