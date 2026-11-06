@@ -6,7 +6,8 @@ Lifelong multi-agent path finding for warehouse robots: a hybrid PIBT + LNS plan
 congestion guidance, LaCAM deadlock fallback and delay-robust execution, benchmarked against
 WHCA\*, PIBT, RHCR and LaCAM. Includes a replay dashboard with a congestion heat map.
 
-> **Status:** Phase 1 in progress (simulator and WHCA\* baseline).
+> **Status:** Phase 1 done (simulator and WHCA\* baseline). Phase 2 (PIBT and congestion
+> guidance) is next.
 
 ## The problem
 
@@ -30,6 +31,24 @@ throughput high as the fleet grows, and stay safe when robots run late.
 | Refinement | Anytime large-neighbourhood search with space-time A\* repairs | MAPF-LNS, WHCA\* |
 | Deadlock fallback | Solve a stuck area with a complete solver | LaCAM |
 | Execution | Action dependency graph: delays cause waits, never collisions | ADG |
+
+## Results so far
+
+Lifelong runs on the 32×32 warehouse, 1,000 steps, seed 0. Every step is collision-checked.
+
+| Robots | Greedy (tasks / 1,000 steps) | WHCA\* (tasks / 1,000 steps) | WHCA\* longest errand (steps) |
+| --- | --- | --- | --- |
+| 10 | 9 | 106 | 60 |
+| 20 | 15 | 212 | 65 |
+| 30 | 8 | 247 | 155 |
+
+The greedy planner deadlocks within the first ~100 steps. WHCA\* scales well to 20 robots,
+then gains less per robot as queues form at stations, and the longest errand time grows,
+a sign of robots waiting a long time for their turn. Reproduce a row with:
+
+```bash
+python -m warehouse_mapf.run --planner whca --robots 30 --steps 1000
+```
 
 ## Roadmap
 
