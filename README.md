@@ -6,8 +6,7 @@ Lifelong multi-agent path finding for warehouse robots: a hybrid PIBT + LNS plan
 congestion guidance, LaCAM deadlock fallback and delay-robust execution, benchmarked against
 WHCA\*, PIBT, RHCR and LaCAM. Includes a replay dashboard with a congestion heat map.
 
-> **Status:** Phase 1 done (simulator and WHCA\* baseline). Phase 2 (PIBT and congestion
-> guidance) is next.
+> **Status:** Phase 2 in progress: PIBT done; congestion guidance and assignment policies next.
 
 ## The problem
 
@@ -35,19 +34,26 @@ throughput high as the fleet grows, and stay safe when robots run late.
 ## Results so far
 
 Lifelong runs on the 32×32 warehouse, 1,000 steps, seed 0. Every step is collision-checked.
+Throughput is tasks completed per 1,000 steps; the longest errand (in steps) shows starvation.
 
-| Robots | Greedy (tasks / 1,000 steps) | WHCA\* (tasks / 1,000 steps) | WHCA\* longest errand (steps) |
-| --- | --- | --- | --- |
-| 10 | 9 | 106 | 60 |
-| 20 | 15 | 212 | 65 |
-| 30 | 8 | 247 | 155 |
+| Robots | Greedy | WHCA\* | PIBT | WHCA\* longest errand | PIBT longest errand |
+| --- | --- | --- | --- | --- | --- |
+| 10 | 9 | 106 | 109 | 60 | 56 |
+| 20 | 15 | 212 | 207 | 65 | 55 |
+| 30 | 8 | 247 | 302 | 155 | 56 |
+| 40 | – | 146 | 387 | 253 | 65 |
+| 60 | – | – | 512 | – | 92 |
+| 120 | – | – | 603 | – | 237 |
 
-The greedy planner deadlocks within the first ~100 steps. WHCA\* scales well to 20 robots,
-then gains less per robot as queues form at stations, and the longest errand time grows,
-a sign of robots waiting a long time for their turn. Reproduce a row with:
+- Greedy deadlocks within the first ~100 steps.
+- WHCA\* matches PIBT up to 20 robots, then robots crowd the stations and throughput falls.
+- PIBT keeps scaling and plans in about 1 ms per step against WHCA\*'s 5–30 ms. Beyond ~60
+  robots its errand times grow as traffic builds up, which congestion guidance targets next.
+
+Reproduce a row with:
 
 ```bash
-python -m warehouse_mapf.run --planner whca --robots 30 --steps 1000
+python -m warehouse_mapf.run --planner pibt --robots 40 --steps 1000
 ```
 
 ## Roadmap

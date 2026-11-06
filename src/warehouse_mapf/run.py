@@ -13,10 +13,11 @@ from pathlib import Path
 
 from warehouse_mapf.baselines.greedy import GreedyPlanner
 from warehouse_mapf.baselines.whca import WHCAStarPlanner
+from warehouse_mapf.planner.pibt import PIBTPlanner
 from warehouse_mapf.sim.simulator import Simulator
 from warehouse_mapf.sim.warehouse import Warehouse
 
-PLANNERS = {"greedy": GreedyPlanner, "whca": WHCAStarPlanner}
+PLANNERS = {"greedy": GreedyPlanner, "whca": WHCAStarPlanner, "pibt": PIBTPlanner}
 DEFAULT_LAYOUT = Path(__file__).resolve().parents[2] / "maps" / "warehouse-small-32x32.json"
 
 
@@ -43,6 +44,8 @@ def main(argv: list[str] | None = None) -> dict[str, float]:
             "priority": args.priority,
         }
         planner = WHCAStarPlanner(**planner_params, seed=args.seed)
+    elif args.planner == "pibt":
+        planner = PIBTPlanner(seed=args.seed)
     else:
         planner = PLANNERS[args.planner]()
 
